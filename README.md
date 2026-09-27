@@ -267,6 +267,7 @@ Run these from the project folder (`/opt/docker-vps-starter`).
 | `port is already allocated` / `address already in use` | Something already listens on `HOST_PORT` | `ss -tlnp \| grep :8080`, then change `HOST_PORT` in `.env` |
 | Container stuck in **Created** | It failed to start | `docker start NAME` prints the reason |
 | Build fails at `pip install` with `Temporary failure in name resolution` | Containers have no internet: Docker's firewall/NAT rules are missing (often wiped by a CSF restart) or IP forwarding is off | Test: `docker run --rm busybox ping -c 2 1.1.1.1`. Fix: `systemctl restart docker`, and check `sysctl net.ipv4.ip_forward` says `1` |
+| nginx is up but its **PORTS** column is empty after you fixed a port conflict | The container was created during the failed attempt and kept that broken state | `docker compose up -d --force-recreate nginx` |
 | `'compose' is not a docker command` | Compose plugin missing | `dnf install -y docker-compose-plugin` |
 | `502 Bad Gateway` after scaling | nginx still points at old app copies | `docker compose restart nginx` |
 | Page stopped loading after `csf -r` | CSF flushed Docker's iptables rules | `systemctl restart docker` |
