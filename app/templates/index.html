@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ s.title }}</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5d6677;
+      --line: #e3e6ec; --accent: #1d63ed; --ok: #1a7f37; --bad: #c62828;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1216; --card: #171b21; --text: #e6e9ef; --muted: #98a1b3;
+        --line: #262c35; --accent: #5b8def; --ok: #4ac26b; --bad: #ff6b6b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 16px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 28px; }
+    .hero {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 28px; text-align: center; margin-bottom: 20px;
+    }
+    .count { font-size: 3.5rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .item {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    }
+    .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    h2 { font-size: 1.05rem; margin: 28px 0 10px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card);
+            border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: 0; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .you { color: var(--accent); font-weight: 600; }
+    footer { color: var(--muted); font-size: .85rem; margin-top: 28px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>{{ s.title }}</h1>
+  <p class="sub">nginx &rarr; Flask app &rarr; Redis, three containers talking over Docker networks.</p>
+
+  <section class="hero">
+    {% if s.redis == "up" %}
+      <div class="count">{{ s.visits }}</div>
+      <div>total visits, stored in Redis</div>
+    {% else %}
+      <div class="count bad">&mdash;</div>
+      <div class="bad">Redis is not reachable. Try <code>docker compose logs redis</code></div>
+    {% endif %}
+  </section>
+
+  <div class="grid">
+    <div class="item"><div class="label">Answered by container</div><div class="value">{{ s.container }}</div></div>
+    <div class="item"><div class="label">Redis</div>
+      <div class="value {{ 'ok' if s.redis == 'up' else 'bad' }}">{{ s.redis }}</div></div>
+    <div class="item"><div class="label">Container uptime</div><div class="value">{{ s.uptime }}</div></div>
+    <div class="item"><div class="label">Container time</div><div class="value">{{ s.time }}</div></div>
+    <div class="item"><div class="label">Python</div><div class="value">{{ s.python }}</div></div>
+  </div>
+
+  {% if s.by_container %}
+  <h2>Visits per app container</h2>
+  <table>
+    <tr><th>Container</th><th style="text-align:right">Visits</th></tr>
+    {% for name, hits in s.by_container.items() %}
+    <tr>
+      <td class="value {{ 'you' if name == s.container }}">{{ name }}{% if name == s.container %} (this one){% endif %}</td>
+      <td class="num">{{ hits }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <footer>Refresh to count another visit. JSON: <code>/api/stats</code> · Health: <code>/health</code></footer>
+</main>
+</body>
+</html>

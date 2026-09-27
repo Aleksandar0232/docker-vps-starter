@@ -1,0 +1,7 @@
+# Files Docker should NOT copy into the image (keeps it small and clean)
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.env

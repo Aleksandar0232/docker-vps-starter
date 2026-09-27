@@ -1,0 +1,79 @@
+# Runs on GitHub's servers after every push:
+#   1. unit tests for the app
+#   2. builds the real images, starts the full stack, and checks it end to end
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  stack:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from the example
+        run: cp .env.example .env
+
+      - name: Validate compose.yaml
+        run: docker compose config --quiet
+
+      - name: Build and start the stack (waits for healthchecks)
+        run: docker compose up -d --build --wait --wait-timeout 180
+
+      - name: Show running containers
+        run: docker compose ps
+
+      - name: Smoke test through nginx on port 8080
+        run: |
+          set -e
+          count() { curl -fsS http://127.0.0.1:8080/api/stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["visits"])'; }
+          curl -fsS http://127.0.0.1:8080/ | grep -q "Docker VPS Starter"
+          before=$(count)
+          curl -fsS http://127.0.0.1:8080/ > /dev/null
+          after=$(count)
+          echo "visits before=$before after=$after"
+          test "$after" -eq $((before + 1))
+          curl -fsS http://127.0.0.1:8080/health | grep -q '"redis":"up"'
+          curl -fsSI http://127.0.0.1:8080/ | grep -qi "x-content-type-options: nosniff"
+
+      - name: Data survives a restart (named volume)
+        run: |
+          set -e
+          before=$(curl -fsS http://127.0.0.1:8080/api/stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["visits"])')
+          docker compose down
+          docker compose up -d --wait --wait-timeout 180
+          after=$(curl -fsS http://127.0.0.1:8080/api/stats | python3 -c 'import json,sys; print(json.load(sys.stdin)["visits"])')
+          echo "before restart=$before after restart=$after"
+          test "$after" -eq "$before"
+
+      - name: Redis is NOT reachable from outside
+        run: |
+          if timeout 3 bash -c '</dev/tcp/127.0.0.1/6379' 2>/dev/null; then
+            echo "Redis port is exposed!"; exit 1
+          fi
+          echo "OK: 6379 is closed on the host"
+
+      - name: Logs (on failure)
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,95 @@
+# compose.yaml: the "playbook" that describes the whole stack.
+# One command starts everything:   docker compose up -d --build
+#
+#   Internet ──► :8080 nginx ──(frontend network)──► app:8000 ──(backend network)──► redis:6379
+#
+# Only nginx is published to the server. The app and Redis are private.
+
+name: docker-vps-starter
+
+# Reusable logging settings: cap each container's log at 3 x 10 MB so logs
+# can never fill the server's disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ── 1. Reverse proxy: the only container reachable from outside ──────────
+  nginx:
+    image: nginx:stable-alpine          # pulled from Docker Hub
+    ports:
+      # SERVER_IP:SERVER_PORT : CONTAINER_PORT
+      # cPanel's Apache already owns 80/443, so we use 8080 by default.
+      - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-8080}:80"
+    volumes:
+      # Mount our config file into the container (read-only).
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy      # wait until the app answers /health
+    networks: [frontend]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped             # come back after crashes and reboots
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ── 2. The Python app: built from ./app/Dockerfile ────────────────────────
+  app:
+    build: ./app                        # build our own image instead of pulling
+    image: docker-vps-starter-app:latest
+    environment:
+      APP_TITLE: ${APP_TITLE:-Docker VPS Starter}
+      REDIS_HOST: redis                 # the service name below is its hostname
+      TZ: ${TZ:-UTC}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [frontend, backend]       # the only service on both networks
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── 3. Redis: the database that stores the visit counter ─────────────────
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]   # write data to disk
+    volumes:
+      - redis-data:/data                # named volume = data survives rebuilds
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+networks:
+  frontend: {}
+  backend:
+    internal: true    # no internet access on this network; Redis stays private
+
+volumes:
+  redis-data: {}
